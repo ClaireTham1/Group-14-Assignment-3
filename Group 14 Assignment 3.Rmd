@@ -1,0 +1,148 @@
+---
+title: "Group 14 Assignment 3"
+"Cam McCutchen | Aeshna Prasad | Claire Tham "
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+Assignment Description
+
+Data: We chose to look at the relationship of in San Francisco
+Accordingly, we chose two polygon layers (parks and ) and two dot points (). The spatial representation could possibly shed some light on the sustainable developments in San Francisco and evaluate ... Potential areas of future research could include adding demographic data, ... and how such  statisitics changed over time
+
+Group Work: We were all eager to learn all aspects of the exercise, so we decided to do the exercise individually before deciding which 6 maps to represent. This helped us figure out the code and feel more confident about the R interface
+
+For our submission, we selected 6 maps to represent our team work
+
+Point allocation: We would allocate 10 points to each member
+```{r packages}
+library(sf)
+library(tidyverse)
+library(ggthemes)
+library(ggspatial)
+library(units)
+library(nngeo)
+library(magrittr)
+```
+Datasets
+
+```{r pressure, echo=FALSE}
+#Loading Data
+
+nbhoods <- st_read("https://data.sfgov.org/api/geospatial/pty2-tcw4?method=export&format=GeoJSON" , quiet = TRUE)
+
+bikenetwork <- st_read("https://data.sfgov.org/api/geospatial/msjm-67c8?method=export&format=GeoJSON", quiet = TRUE)
+
+greenroofs <- st_read("https://data.sfgov.org/api/geospatial/x83m-rafs?method=export&format=GeoJSON" , quiet = TRUE)
+
+parks <- st_read("https://data.sfgov.org/api/geospatial/42rw-e7xk?method=export&format=GeoJSON", quiet = TRUE)
+
+trees <- read.csv(file = 'Street_Tree_List.csv')
+```
+```{r}
+#Loading Panes
+ca_state_plane <- "+proj=lcc +lat_1=40 +lat_2=41.66666666666666 +lat_0=39.33333333333334 +lon_0=-122 +x_0=2000000 +y_0=500000.0000000002 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs "
+
+nbhoods <- nbhoods %>%
+  st_transform(ca_state_plane)
+
+bikenetwork <- bikenetwork %>%
+  st_transform(ca_state_plane)
+
+greenroofs <- greenroofs %>%
+  st_transform(ca_state_plane)
+
+parks <- parks %>%
+  st_transform(ca_state_plane) %>%
+filter(map_park_n != "Camp Mather")
+```
+
+```{r}
+#Converting CSV Coordinate System
+
+trees_csv <- read.csv(file = "https://data.sfgov.org/api/views/tkzw-k3nq/rows.csv?accessType=DOWNLOAD")
+
+trees_csv <- trees_csv %>%
+  drop_na(c("Latitude", "Longitude")) ##this drops all the NA values in the Latitude and Longitude columns
+
+trees_sf <- st_as_sf(trees_csv, coords = c("Longitude", "Latitude"),
+                     crs = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs") %>% ## this converts the csv into an sf object that transforms the lat/lon into spatial data using WGS84 coordinate reference system
+  
+  st_transform(ca_state_plane) ## project it onto the state plane
+```
+
+```{r}
+#Subsetting
+
+trees_inside <- trees_sf[nbhoods,]
+parks_inside <- parks[nbhoods,]
+```
+
+```{r}
+#Plotting All Data
+
+ggplot(nbhoods) +
+  geom_sf(fill = NA, color = "gray") +
+  geom_sf(data = trees_inside , size = 0.01, alpha = 0.01) +
+  geom_sf(data = greenroofs, size = 0.01) +
+  geom_sf(data= parks_inside, fill = "black", color = NA, alpha = 0.5) +
+  geom_sf(data= bikenetwork, fill = NA, color = "orange", size = 0.1) +
+  theme_map() +
+  annotation_scale()
+```
+Map : Counting the number of Greenroofs in San Franciso's neighbourhood
+
+Comment: The map highlights the absolute number of Greenroofs being distributed in the neighborhoods in San Franciso. This output highlights how the greenroofs are spatially concentrated in some neighborhoods and absent in others. This can help shed light on how resources are being concentrated in the San Francisco neighborhood and serve as a point of information directing the government on how to allocate resources to encourgae adoption of greenroofs in neighbourhoods that do not have greenroofs.
+
+```{r}
+neighborhoods <- neighborhoods %>%
+  mutate(num_greenroofs = lengths(st_covers(neighborhoods,greenroofs)))
+
+ggplot(neighborhoods)+
+  geom_sf(color = NA, aes(fill = num_greenroofs)) + scale_fill_viridis_c(name = " San Francisco neighborhoods\nby number of greenroofs",
+                                        breaks = breaks <- seq(0, 10, by = 1 ),
+                       labels = paste(prettyNum(breaks, big.mark = ","),
+                                      "greenroofs")) +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr",
+                         style = north_arrow_minimal()) +
+theme_map() +
+  theme(legend.background = element_rect(fill = alpha("white", 0.5), 
+                                         color = "gray"))
+
+```
+Map: The Average density of Green Roofs in San Franciso's neighbourhood.
+Comment: An interesting point to note is that density has a different impact on the map as opposed to comparing absolute data. This is highlighted though the change in color of the map where the smaller neighbourhood becomes yellow compared to the larger neighbourhood which was initially yellow when measuring aboslutes (refer to graph above). This is in the spirit of density where density takes into account the size and area(sf) of the neighbourhood. By virtue of the fact that the smaller neighbourhood is smaller in area, yet has some greenroofs, it results in the map representing it as the most dense as opposed to the larger neighbourhood which had the most number of greenroofs in absolutes. This serves as a cautionary tale when interpreting the data because it creates an illusion that the smaller neighbourhood has a large concentration of green roofs, but in reality, it is because of the small size of the neighbourhood.
+
+```{r}
+neighborhoods <- neighborhoods %>%
+  mutate(area = set_units(st_area(neighborhoods), km^2)) %>%
+  mutate(greenroofs_dens = as.numeric(num_greenroofs / area))
+
+ggplot(neighborhoods) +
+  geom_sf(color = NA, 
+          aes(fill = greenroofs_dens)) +
+    scale_fill_viridis_c(name = 
+                           "San Francisco neighborhoods\nby greenroofs density",
+                       breaks = breaks <- seq(0, 10, by = 1),
+                       labels = paste(prettyNum(breaks, big.mark = ","),
+                                      "greenroofs per square km")) +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr",
+                         style = north_arrow_minimal()) +
+theme_map() +
+  theme(legend.position = "right",
+    legend.background = element_rect(fill = alpha("white", 0.5), 
+                                         color = "gray"))
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
